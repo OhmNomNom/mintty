@@ -13,7 +13,7 @@
 # - RELEASE: release number for packaging
 # - TARGET: target triple for cross compiling
 
-NAME := mintty
+NAME := thyme
 
 exe:
 	#cd src; $(MAKE) exe

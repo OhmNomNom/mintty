@@ -23,7 +23,7 @@ extern int cell_width, cell_height;  // includes spacing
 extern int PADDING;
 
 
-extern bool win_is_fullscreen;
+extern bool win_is_fullscreen, win_is_borderless;
 extern uint dpi;
 extern bool per_monitor_dpi_aware;
 

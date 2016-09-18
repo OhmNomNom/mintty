@@ -58,7 +58,9 @@ static int extra_width, extra_height, norm_extra_width, norm_extra_height;
 
 // State
 bool win_is_fullscreen;
+bool win_is_borderless;
 static bool go_fullscr_on_max;
+static bool go_borderless_on_max;
 static bool resizing;
 static int zoom_token = 0;  // for heuristic handling of Shift zoom (#467, #476)
 static bool default_size_token = false;
@@ -382,6 +384,15 @@ get_monitor_info(int moni, MONITORINFO *mip)
   EnumDisplayMonitors(0, 0, monitor_enum, 0);
 }
 
+static void
+get_workarea_info(MONITORINFO *mip)
+{
+  HMONITOR mon = MonitorFromWindow(wnd, MONITOR_DEFAULTTONEAREST);
+  mip->cbSize = sizeof(MONITORINFO);
+  GetMonitorInfo(mon, mip);
+}
+
+
 #define dont_debug_display_monitors_mockup
 #define dont_debug_display_monitors
 
@@ -582,8 +593,8 @@ win_set_pixels(int height, int width)
 {
   trace_resize(("--- win_set_pixels %d %d\n", height, width));
   SetWindowPos(wnd, null, 0, 0,
-               width + extra_width + 2 * PADDING,
-               height + extra_height + 2 * PADDING,
+               width + extra_width + 2 * cfg.xpadding,
+               height + extra_height + 2 * cfg.ypadding,
                SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOMOVE | SWP_NOZORDER);
 }
 
@@ -633,7 +644,7 @@ update_glass(void)
 {
   if (pDwmExtendFrameIntoClientArea) {
     bool enabled =
-      cfg.transparency == TR_GLASS && !win_is_fullscreen &&
+      cfg.transparency == TR_GLASS && !(win_is_fullscreen || win_is_borderless) &&
       !(cfg.opaque_when_focused && term.has_focus);
     pDwmExtendFrameIntoClientArea(wnd, &(MARGINS){enabled ? -1 : 0, 0, 0, 0});
   }
@@ -646,19 +657,46 @@ static void
 make_fullscreen(void)
 {
   win_is_fullscreen = true;
+  win_is_borderless = false;
 
- /* Remove the window furniture. */
-  LONG style = GetWindowLong(wnd, GWL_STYLE);
+ /* remove the window furniture. */
+  long style = GetWindowLong(wnd, GWL_STYLE);
   style &= ~(WS_CAPTION | WS_BORDER | WS_THICKFRAME);
   SetWindowLong(wnd, GWL_STYLE, style);
 
- /* The glass effect doesn't work for fullscreen windows */
+ /* the glass effect doesn't work for fullscreen windows */
   update_glass();
 
- /* Resize ourselves to exactly cover the nearest monitor. */
+ /* resize ourselves to exactly cover the nearest monitor. */
   MONITORINFO mi;
   get_my_monitor_info(&mi);
   RECT fr = mi.rcMonitor;
+  SetWindowPos(wnd, HWND_TOP, fr.left, fr.top,
+               fr.right - fr.left, fr.bottom - fr.top, SWP_FRAMECHANGED);
+}
+
+/*
+ * Go borderless. This should only be called when we are already maximised.
+ */
+static void
+make_borderless(void)
+{
+  win_is_borderless = true;
+  win_is_fullscreen = false;
+
+ /* remove the window furniture. */
+  long style = GetWindowLong(wnd, GWL_STYLE);
+  style &= ~(WS_CAPTION | WS_BORDER | WS_THICKFRAME);
+  SetWindowLong(wnd, GWL_STYLE, style);
+
+ /* the glass effect doesn't work for fullscreen windows */
+  update_glass();
+
+ /* resize ourselves to exactly cover the nearest monitor. */
+  MONITORINFO mi;
+  get_workarea_info(&mi);
+  /// TODO get_my_monitor_info
+  RECT fr = mi.rcWork;
   SetWindowPos(wnd, HWND_TOP, fr.left, fr.top,
                fr.right - fr.left, fr.bottom - fr.top, SWP_FRAMECHANGED);
 }
@@ -685,6 +723,28 @@ clear_fullscreen(void)
   SetWindowLong(wnd, GWL_STYLE, style);
   SetWindowPos(wnd, null, 0, 0, 0, 0,
                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+}
+
+/*
+ * Clear the borderless attributes.
+ */
+static void
+clear_borderless(void)
+{
+  win_is_borderless = false;
+  update_glass();
+
+ /* Reinstate the window furniture. */
+  LONG style = GetWindowLong(wnd, GWL_STYLE);
+  if (border_style) {
+    if (strcmp(border_style, "void") != 0) {
+      style |= WS_THICKFRAME;
+    }
+  }
+  else {
+    style |= WS_CAPTION | WS_BORDER | WS_THICKFRAME;
+  }
+  SetWindowLong(wnd, GWL_STYLE, style);
 }
 
 void
@@ -719,7 +779,7 @@ win_set_geom(int y, int x, int height, int width)
     term_height = height;
 
   SetWindowPos(wnd, null, term_x, term_y,
-               term_width + 2 * PADDING, term_height + 2 * PADDING,
+               term_width + 2 * cfg.xpadding, term_height + 2 * cfg.ypadding,
                SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOZORDER);
 }
 
@@ -847,7 +907,7 @@ win_adjust_borders(int t_width, int t_height)
 {
   term_width = t_width;
   term_height = t_height;
-  RECT cr = {0, 0, term_width + 2 * PADDING, term_height + 2 * PADDING};
+  RECT cr = {0, 0, term_width + 2 * cfg.xpadding, term_height + 2 * cfg.ypadding};
   RECT wr = cr;
   window_style = WS_OVERLAPPEDWINDOW;
   if (border_style) {
@@ -940,8 +1000,8 @@ win_adapt_term_size(bool sync_size_with_font, bool scale_font_with_size)
     norm_extra_width = extra_width;
     norm_extra_height = extra_height;
   }
-  int term_width = client_width - 2 * PADDING;
-  int term_height = client_height - 2 * PADDING;
+  int term_width = client_width - 2 * cfg.xpadding;
+  int term_height = client_height - 2 * cfg.ypadding;
 
   if (scale_font_with_size && term.cols != 0 && term.rows != 0) {
     // calc preliminary size (without font scaling), as below
@@ -991,6 +1051,10 @@ win_adapt_term_size(bool sync_size_with_font, bool scale_font_with_size)
   }
   win_invalidate_all();
 
+  if(win_is_borderless) {
+    win_is_borderless = false;
+    win_maximise(2);
+  }
   win_update_search();
   term_schedule_search_update();
   win_schedule_update();
@@ -998,7 +1062,7 @@ win_adapt_term_size(bool sync_size_with_font, bool scale_font_with_size)
 
 /*
  * Maximise or restore the window in response to a server-side request.
- * Argument value of 2 means go fullscreen.
+ * Argument value of 2 means go borderless, 3 go fullscreen.
  */
 void
 win_maximise(int max)
@@ -1008,12 +1072,19 @@ win_maximise(int max)
   if (IsZoomed(wnd)) {
     if (!max)
       ShowWindow(wnd, SW_RESTORE);
-    else if (max == 2 && !win_is_fullscreen)
+    else if (max == 3 && !win_is_fullscreen)
       make_fullscreen();
+    else if ((cfg.borderless_max || max == 2) && !win_is_borderless)
+      make_borderless();
   }
   else if (max) {
-    if (max == 2)
+    if (max == 3) {
       go_fullscr_on_max = true;
+      go_borderless_on_max = false;
+    } else if(cfg.borderless_max || max == 2) {
+      go_borderless_on_max = true;
+      go_fullscr_on_max = false;
+    }
     ShowWindow(wnd, SW_MAXIMIZE);
   }
 }
@@ -1296,7 +1367,16 @@ static struct {
             zoom_token = 4;  // override cfg.zoom_font_with_window == 0
           else
             zoom_token = -4;
-          win_maximise(win_is_fullscreen ? 0 : 2);
+          win_maximise(win_is_fullscreen ? 0 : 3);
+
+          term_schedule_search_update();
+          win_update_search();
+        when IDM_BORDERLESS or IDM_BORDERLESS_ZOOM:
+          if ((wp & ~0xF) == IDM_BORDERLESS_ZOOM)
+            zoom_token = 4;  // override cfg.zoom_font_with_window == 0
+          else
+            zoom_token = -4;
+          win_maximise(win_is_borderless ? 0 : 2);
 
           term_schedule_search_update();
           win_update_search();
@@ -1449,8 +1529,8 @@ static struct {
       * 2) Make sure the window size is _stepped_ in units of the font size.
       */
       LPRECT r = (LPRECT) lp;
-      int width = r->right - r->left - extra_width - 2 * PADDING;
-      int height = r->bottom - r->top - extra_height - 2 * PADDING;
+      int width = r->right - r->left - extra_width - 2 * cfg.xpadding;
+      int height = r->bottom - r->top - extra_height - 2 * cfg.ypadding;
       int cols = max(1, (float)width / cell_width + 0.5);
       int rows = max(1, (float)height / cell_height + 0.5);
 
@@ -1480,9 +1560,14 @@ static struct {
       trace_resize(("# WM_SIZE (resizing %d) VK_SHIFT %02X\n", resizing, GetKeyState(VK_SHIFT)));
       if (wp == SIZE_RESTORED && win_is_fullscreen)
         clear_fullscreen();
+      else if (wp == SIZE_RESTORED && win_is_borderless)
+        clear_borderless();
       else if (wp == SIZE_MAXIMIZED && go_fullscr_on_max) {
         go_fullscr_on_max = false;
         make_fullscreen();
+      } else if (wp == SIZE_MAXIMIZED && (cfg.borderless_max || go_fullscr_on_max)) {
+        go_borderless_on_max = false;
+        make_borderless();
       }
 
       if (!resizing) {
@@ -1999,6 +2084,8 @@ DEFINE_PROPERTYKEY(PKEY_AppUserModel_StartPinOption, 0x9f4c2855,0x9f79,0x4B39,0x
 int
 main(int argc, char *argv[])
 {
+  /// TODO 
+  setbuf(stdout, NULL);
   main_argv = argv;
   main_argc = argc;
 #ifdef debuglog
@@ -2043,20 +2130,20 @@ main(int argc, char *argv[])
 
   // Load config files
   // try global config file
-  load_config("/etc/minttyrc", true);
+  load_config("/etc/thymerc", true);
   // try Windows config location (#201)
   char * appdata = getenv("APPDATA");
   if (appdata && *appdata) {
-    string rc_file = asform("%s/mintty/config", appdata);
+    string rc_file = asform("%s/thyme/config", appdata);
     load_config(rc_file, true);
     delete(rc_file);
   }
   // try XDG config base directory default location (#525)
-  string rc_file = asform("%s/.config/mintty/config", home);
+  string rc_file = asform("%s/.config/thyme/config", home);
   load_config(rc_file, true);
   delete(rc_file);
   // try home config file
-  rc_file = asform("%s/.minttyrc", home);
+  rc_file = asform("%s/.thymerc", home);
   load_config(rc_file, true);
   delete(rc_file);
 
@@ -2539,7 +2626,8 @@ main(int argc, char *argv[])
 
   // Finally show the window!
   go_fullscr_on_max = (cfg.window == -1);
-  ShowWindow(wnd, go_fullscr_on_max ? SW_SHOWMAXIMIZED : cfg.window);
+  go_borderless_on_max = (cfg.window == -2);
+  ShowWindow(wnd, (go_fullscr_on_max || go_borderless_on_max) ? SW_SHOWMAXIMIZED : cfg.window);
   SetFocus(wnd);
 
 #ifdef debug_display_monitors_mockup

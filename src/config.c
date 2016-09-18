@@ -235,6 +235,10 @@ options[] = {
   {"ScrollMod", OPT_MOD, offcfg(scroll_mod)},
   {"PgUpDnScroll", OPT_BOOL, offcfg(pgupdn_scroll)},
   {"SearchBar", OPT_STRING, offcfg(search_bar)},
+  {"BorderlessMax", OPT_BOOL, offcfg(borderless_max)},
+  {"XPadding", OPT_INT, offcfg(xpadding)},
+  {"YPadding", OPT_INT, offcfg(ypadding)},
+
 
   // Terminal
   {"Term", OPT_STRING, offcfg(term)},
@@ -372,6 +376,7 @@ static opt_val
     {"min", 2},    // SW_SHOWMINIMIZED
     {"max", 3},    // SW_SHOWMAXIMIZED
     {"full", -1},
+    {"borderless", -2},
     {0, 0}
   },
   [OPT_HOLD] = (opt_val[]) {
@@ -1780,6 +1785,11 @@ setup_config_box(controlbox * b)
     s, "&PgUp and PgDn scroll without modifier",
     dlg_stdcheckbox_handler, &new_cfg.pgupdn_scroll
   );
+  ctrl_checkbox(
+    s, "&Maximize on borderless",
+    dlg_stdcheckbox_handler, &new_cfg.borderless_max
+  );
+
 
  /*
   * The Terminal panel.

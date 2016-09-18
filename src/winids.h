@@ -24,5 +24,7 @@
 #define IDM_NEW_MONI        0x00D0
 #define IDM_COPYTITLE       0x00E0
 #define IDM_SEARCH          0x00F0
+#define IDM_BORDERLESS      0x0100
+#define IDM_BORDERLESS_ZOOM 0x0110
 
 #endif

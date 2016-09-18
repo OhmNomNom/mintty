@@ -18,7 +18,7 @@
 # whether they're defined, so e.g. 'make DEBUG=1' will trigger a debug build.
 
 #############################################################################
-NAME := mintty
+NAME := thyme
 
 .PHONY: exe src pkg zip pdf clean
 

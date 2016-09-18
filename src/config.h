@@ -97,6 +97,8 @@ typedef struct {
   char scroll_mod;
   bool pgupdn_scroll;
   string search_bar;
+  bool borderless_max;
+  int xpadding,ypadding;
   // Terminal
   string term;
   wstring answerback;

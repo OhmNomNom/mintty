@@ -27,7 +27,7 @@ enum {
 };
 
 LOGFONT lfont;
-static HFONT fonts[FONT_MAXNO];
+static HFONT fonts[0xFF];
 static bool fontflag[FONT_MAXNO];
 static int fw_norm = FW_NORMAL;
 static int fw_bold = FW_BOLD;
@@ -621,10 +621,10 @@ win_paint(void)
     winimg_paint();
   }
 
-  if (p.fErase || p.rcPaint.left < PADDING ||
-      p.rcPaint.top < PADDING ||
-      p.rcPaint.right >= PADDING + cell_width * term.cols ||
-      p.rcPaint.bottom >= PADDING + cell_height * term.rows) {
+  if (p.fErase || p.rcPaint.left < cfg.xpadding ||
+      p.rcPaint.top < cfg.ypadding ||
+      p.rcPaint.right >= cfg.xpadding + cell_width * term.cols ||
+      p.rcPaint.bottom >= cfg.ypadding + cell_height * term.rows) {
     colour bg_colour = colours[term.rvideo ? FG_COLOUR_I : BG_COLOUR_I];
     HBRUSH oldbrush = SelectObject(dc, CreateSolidBrush(bg_colour));
     HPEN oldpen = SelectObject(dc, CreatePen(PS_SOLID, 0, bg_colour));
@@ -632,9 +632,9 @@ win_paint(void)
     IntersectClipRect(dc, p.rcPaint.left, p.rcPaint.top, p.rcPaint.right,
                       p.rcPaint.bottom);
 
-    ExcludeClipRect(dc, PADDING, PADDING,
-                    PADDING + cell_width * term.cols,
-                    PADDING + cell_height * term.rows);
+    ExcludeClipRect(dc, cfg.xpadding, cfg.ypadding,
+                    cfg.xpadding + cell_width * term.cols,
+                    cfg.ypadding + cell_height * term.rows);
 
     Rectangle(dc, p.rcPaint.left, p.rcPaint.top,
                   p.rcPaint.right, p.rcPaint.bottom);
@@ -685,8 +685,8 @@ do_update(void)
   // blind people: apparently some helper software tracks the system caret,
   // so we should arrange to have one.)
   if (term.has_focus) {
-    int x = term.curs.x * cell_width + PADDING;
-    int y = (term.curs.y - term.disptop) * cell_height + PADDING;
+    int x = term.curs.x * cell_width + cfg.xpadding;
+    int y = (term.curs.y - term.disptop) * cell_height + cfg.ypadding;
     SetCaretPos(x, y);
     if (ime_open) {
       COMPOSITIONFORM cf = {.dwStyle = CFS_POINT, .ptCurrentPos = {x, y}};
@@ -863,8 +863,8 @@ win_text(int x, int y, wchar *text, int len, cattr attr, int lattr, bool has_rtl
     return;
 
  /* Convert to window coordinates */
-  x = x * char_width + PADDING;
-  y = y * cell_height + PADDING;
+  x = x * char_width + cfg.xpadding;
+  y = y * cell_height + cfg.ypadding;
 
   if (attr.attr & ATTR_WIDE)
     char_width *= 2;
@@ -1042,7 +1042,7 @@ win_text(int x, int y, wchar *text, int len, cattr attr, int lattr, bool has_rtl
   int width = char_width * (combining ? 1 : len);
   RECT box = {
     .top = y, .bottom = y + cell_height,
-    .left = x, .right = min(x + width, cell_width * term.cols + PADDING)
+    .left = x, .right = min(x + width, cell_width * term.cols + cfg.xpadding)
   };
 
  /* Array with offsets between neighbouring characters */
